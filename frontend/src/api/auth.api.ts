@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+const rawBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const baseURL = rawBaseUrl.endsWith('/api') ? rawBaseUrl : `${rawBaseUrl}/api`;
+
 export const api = axios.create({
-  baseURL: 'http://localhost:3000/api',
+  baseURL,
   withCredentials: true, // important for sending/receiving the HttpOnly refresh token cookie
 });
 

@@ -18,7 +18,9 @@ export function useWebSocket() {
         wsRef.current.close();
       }
 
-      const wsUrl = `ws://localhost:3000/ws?token=${accessToken}`;
+      const rawWsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3000/ws';
+      const baseWsUrl = rawWsUrl.endsWith('/ws') ? rawWsUrl : `${rawWsUrl}/ws`;
+      const wsUrl = `${baseWsUrl}?token=${accessToken}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
