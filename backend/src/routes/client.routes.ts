@@ -3,9 +3,9 @@ import * as clientController from '../controllers/client.controller';
 import { requireRole } from '../middleware/role';
 
 export default async function clientRoutes(fastify: FastifyInstance) {
-  // Only Admin can manage clients
+  // Allow Admin and Project Managers to manage and view clients
   fastify.addHook('preHandler', fastify.authenticate);
-  fastify.addHook('preHandler', requireRole(['ADMIN']));
+  fastify.addHook('preHandler', requireRole(['ADMIN', 'PROJECT_MANAGER']));
 
   fastify.post('/', clientController.createClient);
   fastify.get('/', clientController.getClients);

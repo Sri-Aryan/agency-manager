@@ -15,6 +15,7 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [clientId, setClientId] = useState('');
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [newClientName, setNewClientName] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -24,14 +25,16 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
     enabled: isOpen,
   });
 
-  // Automatically select the first client if available and none selected
+  // Automatically select the first client if available, or open client creation if empty
   React.useEffect(() => {
-    if (clients && clients.length > 0 && !clientId && !isCreatingClient) {
-      setClientId(clients[0].id);
+    if (clients && clients.length > 0) {
+      if (!clientId) {
+        setClientId(clients[0].id);
+      }
     } else if (clients && clients.length === 0) {
       setIsCreatingClient(true);
     }
-  }, [clients, clientId, isCreatingClient]);
+  }, [clients, clientId]);
 
   const createClientMutation = useMutation({
     mutationFn: clientsApi.createClient,
@@ -40,7 +43,11 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setClientId(newClient.id);
       setIsCreatingClient(false);
       setNewClientName('');
+      setErrorMsg(null);
     },
+    onError: (err: any) => {
+      setErrorMsg(err.response?.data?.message || err.message || 'Failed to create client');
+    }
   });
 
   const createProjectMutation = useMutation({
@@ -48,21 +55,59 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setName('');
-      setClientId(clients?.[0]?.id || '');
+      setClientId('');
+      setNewClientName('');
+      setIsCreatingClient(false);
+      setErrorMsg(null);
       onClose();
     },
+    onError: (err: any) => {
+      setErrorMsg(err.response?.data?.message || err.message || 'Failed to create project');
+    }
   });
 
-  const handleCreateClient = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateClient = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!newClientName.trim()) return;
-    createClientMutation.mutate({ name: newClientName });
+    try {
+      setErrorMsg(null);
+      const newClient = await clientsApi.createClient({ name: newClientName.trim() });
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      setClientId(newClient.id);
+      setIsCreatingClient(false);
+      setNewClientName('');
+      return newClient;
+    } catch (err: any) {
+      setErrorMsg(err.response?.data?.message || err.message || 'Failed to create client');
+      throw err;
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientId || !name.trim()) return;
-    createProjectMutation.mutate({ name: name.trim(), clientId });
+    if (!name.trim()) return;
+    setErrorMsg(null);
+
+    let targetClientId = clientId;
+
+    // If user is currently in "Create New Client" mode with a name typed, create the client first
+    if ((isCreatingClient || !targetClientId) && newClientName.trim()) {
+      try {
+        const created = await handleCreateClient();
+        if (created) {
+          targetClientId = created.id;
+        }
+      } catch {
+        return;
+      }
+    }
+
+    if (!targetClientId) {
+      setErrorMsg('Please select or create a client for this project.');
+      return;
+    }
+
+    createProjectMutation.mutate({ name: name.trim(), clientId: targetClientId });
   };
 
   return (
@@ -100,6 +145,12 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
 
             <div className="p-6 space-y-4">
+              {errorMsg && (
+                <div className="p-3 text-xs font-medium bg-rose-50 border border-rose-200 text-rose-700 rounded-xl">
+                  {errorMsg}
+                </div>
+              )}
+
               {/* Project Form */}
               <form id="project-form" onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -125,14 +176,14 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
                       <button
                         type="button"
                         onClick={() => setIsCreatingClient(true)}
-                        className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"
+                        className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline cursor-pointer"
                       >
                         <Plus size={12} /> New Client
                       </button>
                     )}
                   </div>
 
-                  {!isCreatingClient ? (
+                  {!isCreatingClient && clients && clients.length > 0 ? (
                     <select
                       required
                       value={clientId}
@@ -143,7 +194,7 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
                       {loadingClients ? (
                         <option>Loading clients...</option>
                       ) : (
-                        clients?.map((c) => (
+                        clients.map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.name}
                           </option>
@@ -152,9 +203,20 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
                     </select>
                   ) : (
                     <div className="bg-slate-50/90 p-3.5 rounded-xl border border-slate-200 mt-2 space-y-2.5">
-                      <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
-                        <Building2 size={14} className="text-slate-500" />
-                        Create New Client
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
+                          <Building2 size={14} className="text-slate-500" />
+                          {clients && clients.length === 0 ? 'No Clients Yet — Add First Client' : 'Create New Client'}
+                        </div>
+                        {clients && clients.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setIsCreatingClient(false)}
+                            className="text-xs text-slate-500 hover:text-slate-700 font-medium cursor-pointer"
+                          >
+                            Use Existing
+                          </button>
+                        )}
                       </div>
                       <div className="flex gap-2">
                         <input
@@ -162,26 +224,17 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
                           value={newClientName}
                           onChange={(e) => setNewClientName(e.target.value)}
                           className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          placeholder="Client Company Name"
+                          placeholder="Client Company Name (e.g. Acme Corp)"
                         />
                         <button
                           type="button"
-                          onClick={handleCreateClient}
+                          onClick={() => handleCreateClient()}
                           disabled={!newClientName.trim() || createClientMutation.isPending}
-                          className="px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg disabled:opacity-50 hover:bg-blue-600 transition-colors"
+                          className="px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg disabled:opacity-50 hover:bg-blue-600 transition-colors cursor-pointer"
                         >
                           {createClientMutation.isPending ? '...' : 'Save'}
                         </button>
                       </div>
-                      {clients && clients.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setIsCreatingClient(false)}
-                          className="text-xs text-slate-500 hover:text-slate-700 font-medium"
-                        >
-                          Cancel
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>
@@ -191,17 +244,22 @@ export const CreateProjectModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   form="project-form"
-                  disabled={createProjectMutation.isPending || !clientId || isCreatingClient || !name.trim()}
-                  className="px-5 py-2 text-sm font-semibold bg-primary text-white hover:bg-blue-600 rounded-xl transition-all shadow-sm disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                  disabled={
+                    createProjectMutation.isPending ||
+                    createClientMutation.isPending ||
+                    !name.trim() ||
+                    (!clientId && !newClientName.trim())
+                  }
+                  className="px-5 py-2 text-sm font-semibold bg-primary text-white hover:bg-blue-600 rounded-xl transition-all shadow-sm disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 cursor-pointer"
                 >
-                  {createProjectMutation.isPending ? 'Creating...' : 'Create Project'}
+                  {createProjectMutation.isPending || createClientMutation.isPending ? 'Creating...' : 'Create Project'}
                 </button>
               </div>
             </div>

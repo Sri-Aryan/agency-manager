@@ -11,7 +11,7 @@ export function useWebSocket() {
     if (!isAuthenticated || !accessToken) return;
 
     let reconnectTimeoutId: ReturnType<typeof setTimeout>;
-    
+
     const connect = () => {
       // Clean up previous connection just in case
       if (wsRef.current) {
@@ -27,7 +27,7 @@ export function useWebSocket() {
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          
+
           if (message.type === 'task_update') {
             // Push to Zustand feed
             addActivity(message.payload);
