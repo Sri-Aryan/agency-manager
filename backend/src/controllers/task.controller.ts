@@ -171,7 +171,9 @@ export async function updateTaskStatus(request: FastifyRequest, reply: FastifyRe
     // Broadcast to project PMs
     wsService.broadcastToRoom(`PROJECT_${task.projectId}`, { type: 'task_update', payload: wsPayload });
     // Send directly to assigned Developer
-    wsService.sendToUser(task.assignedTo, { type: 'task_update', payload: wsPayload });
+    if (task.assignedTo) {
+      wsService.sendToUser(task.assignedTo, { type: 'task_update', payload: wsPayload });
+    }
 
     // Notifications logic
     if (status === 'IN_REVIEW') {
